@@ -1,7 +1,7 @@
 #-*- coding:utf-8 -*-
 
 import os
-import configparser
+# import configparser
 from configobj import ConfigObj
 
 real_path = os.path.dirname(os.path.realpath(__file__))

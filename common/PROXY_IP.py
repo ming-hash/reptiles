@@ -1,12 +1,16 @@
 #-*- coding:utf-8 -*-
+import os
+import sys
 
 import time
 import re
 import requests
 from bs4 import BeautifulSoup
-from common.DBOperation import DB
-from config import readConfig
 import threading
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.DBOperation import DB
+from myconfig import readConfig
 
 dbconfig = {
             "host":readConfig.DB_IP,
@@ -182,13 +186,16 @@ if __name__ == "__main__":
     # ip_list2 = proxy.Get_ip_list2()
     # ip_list3 = proxy.Get_ip_list3()
     #
-    # proxy_list1 = proxy.Get_effective_ip(ip_list1)
+    proxy_list1 = proxy.Get_effective_ip(ip_list1)
     # proxy_list2 = proxy.Get_effective_ip(ip_list2)
     # proxy_list3 = proxy.Get_effective_ip(ip_list3)
     #
-    # proxy.Storage_db(proxy_list1)
+    proxy.Storage_db(proxy_list1)
     # proxy.Storage_db(proxy_list2)
     # proxy.Storage_db(proxy_list3)
+
+
+
 
     procedure_endtime = time.perf_counter()
     print ("程序运行时间：{:.2f} 秒".format(procedure_endtime-procedure_starttime))
