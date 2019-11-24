@@ -128,29 +128,18 @@ class PROXY:
                               `times` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                               `proxy` varchar(100));""".format(self.TABLE)
 
-        # try:
-        #     count = 0
-        #     self.DB.dml(create_table_sql)
-        #     print("正在将代理IP写入数据库")
-        #     for proxy in proxy_list:
-        #         insert_table_sql = """insert into {}(proxy) values("{}")""".format(self.TABLE, proxy)
-        #         self.DB.dml(insert_table_sql)
-        #         count += 1
-        #     self.DB.close()
-        #     print("写入 {} 个代理IP成功".format(count))
-        # except:
-        #     print("写入数据库异常")
-
-        count = 0
-        self.DB.dml(create_table_sql)
-        print("正在将代理IP写入数据库")
-        for proxy in proxy_list:
-            insert_table_sql = """insert into {}(proxy) values("{}")""".format(self.TABLE, proxy)
-            self.DB.dml(insert_table_sql)
-            count += 1
-        self.DB.close()
-        print("写入 {} 个代理IP成功".format(count))
-
+        try:
+            count = 0
+            self.DB.dml(create_table_sql)
+            print("正在将代理IP写入数据库")
+            for proxy in proxy_list:
+                insert_table_sql = """insert into {}(proxy) values("{}")""".format(self.TABLE, proxy)
+                self.DB.dml(insert_table_sql)
+                count += 1
+            self.DB.close()
+            print("写入 {} 个代理IP成功".format(count))
+        except:
+            print("写入数据库异常")
 
     def Get_db_storage_ip(self):
         """从数据库中获取最新时间段内的代理IP"""
@@ -164,38 +153,75 @@ class PROXY:
         return list(show_data_list)
 
 
+class MyThread(threading.Thread):                               # 封装threading.Thread
+    def __init__(self, func, args=()):
+        super(MyThread, self).__init__()
+        self.func = func
+        self.args = args
+
+    def run(self):
+        time.sleep(2)
+        self.result = self.func(*self.args)
+
+    def get_result(self):
+        threading.Thread.join(self)  # 等待线程执行完毕
+        try:
+            return self.result
+        except Exception:
+            return None
+
+
 
 if __name__ == "__main__":
-
-
     procedure_starttime = time.perf_counter()
     proxy = PROXY(dbconfig)
 
     # 多线程方法
-    # thread_get_ip_list1 = threading.Thread(target = proxy.Get_ip_list1)
-    # thread_get_ip_list2 = threading.Thread(target = proxy.Get_ip_list2)
-    # thread_get_ip_list3 = threading.Thread(target = proxy.Get_ip_list3)
-
-    # thread_get_ip_list1.start()
-    # thread_get_ip_list1.join()
-
-
-
+    # 抓取IP
     ip_list1 = proxy.Get_ip_list1()
-    print(ip_list1)
+    ip_list2 = proxy.Get_ip_list2()
+    ip_list3 = proxy.Get_ip_list3()
+
+    # 创建三个线程实例：验证IP有效性
+    thread_get_ip_list1 = MyThread(proxy.Get_effective_ip, [ip_list1])
+    thread_get_ip_list2 = MyThread(proxy.Get_effective_ip, [ip_list2])
+    thread_get_ip_list3 = MyThread(proxy.Get_effective_ip, [ip_list3])
+
+    # 启动运行线程：验证IP有效性
+    thread_get_ip_list1.start()
+    thread_get_ip_list2.start()
+    thread_get_ip_list3.start()
+
+    thread_get_ip_list1.join()                                        # 阻塞线程1：验证IP有效性
+    result1 = thread_get_ip_list1.get_result()                        # 将线程1输出结果取出
+    thread_write_db1 = MyThread(proxy.Storage_db, [result1])          # 创建线程实例1：将有效IP写入数据库
+    thread_write_db1.start()                                          # 启动运行线程1：将有效IP写入数据库
+    thread_write_db1.join()
+
+    thread_get_ip_list2.join()
+    result2 = thread_get_ip_list1.get_result()
+    thread_write_db2 = MyThread(proxy.Storage_db, [result2])
+    thread_write_db2.start()
+    thread_write_db2.join()
+
+    thread_get_ip_list3.join()
+    result3 = thread_get_ip_list1.get_result()
+    thread_write_db3 = MyThread(proxy.Storage_db, [result3])
+    thread_write_db3.start()
+    thread_write_db3.join()
+
+    # # 普通方法
+    # ip_list1 = proxy.Get_ip_list1()
     # ip_list2 = proxy.Get_ip_list2()
     # ip_list3 = proxy.Get_ip_list3()
     #
-    proxy_list1 = proxy.Get_effective_ip(ip_list1)
+    # proxy_list1 = proxy.Get_effective_ip(ip_list1)
     # proxy_list2 = proxy.Get_effective_ip(ip_list2)
     # proxy_list3 = proxy.Get_effective_ip(ip_list3)
     #
-    proxy.Storage_db(proxy_list1)
+    # proxy.Storage_db(proxy_list1)
     # proxy.Storage_db(proxy_list2)
     # proxy.Storage_db(proxy_list3)
-
-
-
 
     procedure_endtime = time.perf_counter()
     print ("程序运行时间：{:.2f} 秒".format(procedure_endtime-procedure_starttime))
