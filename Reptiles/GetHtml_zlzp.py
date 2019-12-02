@@ -1,5 +1,4 @@
 # -*- coding:utf-8 -*-
-# from __future__ import unicode_literals
 
 import os
 import sys
@@ -12,6 +11,8 @@ from bs4 import BeautifulSoup
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from myconfig import readConfig
+from common.PROXY_IP import PROXY
+from common.GetHtmlCommon import ReadJson, GatHtml
 
 dbconfig = {
     "host": readConfig.DB_IP,
@@ -130,3 +131,40 @@ class ZlzpSpliceUrl:
             rown_litss = [welfare, hiringnumber, positioninformation, workaddress]
             rown_dicts[id_url["id"]] = rown_litss
         return rown_dicts
+
+
+
+
+if __name__ == "__main__":
+    # 获取代理IP列表
+    proxy = PROXY(dbconfig)
+    proxy_list = proxy.Get_db_storage_ip()
+    if proxy_list is False:
+        ip_list = proxy.Get_ip_list1()
+        new_proxy_list = proxy.Get_effective_ip(ip_list)
+        proxy.Storage_db(proxy_list)
+        proxy_list = proxy.Get_db_storage_ip()
+
+    proxies = eval(random.choice(proxy_list))
+
+    # 读取json文件
+    read_json = ReadJson()
+    read_json.readall()
+    all_input = read_json.Connect_url()
+
+    # 获取智联招聘的条件url参数
+    z_keyword = read_json.edit_keyword(all_input[0], 1)
+    z_wuhan_area = read_json.read_wuhan_area(all_input[1], 1)
+    z_provide_salary = read_json.read_provide_salary(all_input[2], 1)
+    z_work_year = read_json.read_work_year(all_input[3], 1)
+    z_education = read_json.read_education(all_input[4], 1)
+
+    # 获取url_head参数
+    GatHtml = GatHtml()
+    zlzp_url_head = GatHtml.zlzp_url
+
+    # 拼接智联招聘的url
+    ZlzpSpliceUrl = ZlzpSpliceUrl()
+    zlzp_url = ZlzpSpliceUrl.Zlzp_url(zlzp_url_head, z_keyword, z_wuhan_area, z_provide_salary, z_work_year, z_education)
+    id_url_list = ZlzpSpliceUrl.Recruitment_url(zlzp_url, proxies)
+    rown_dicts = ZlzpSpliceUrl.Analysis_url(id_url_list, proxies)

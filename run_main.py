@@ -36,9 +36,8 @@ if __name__ == "__main__":
             new_proxy_list = proxy.Get_effective_ip(ip_list)
             proxy.Storage_db(proxy_list)
             proxy_list = proxy.Get_db_storage_ip()
+        proxies = eval(random.choice(proxy_list))
 
-        proxies = random.choice(proxy_list)
-        proxies = eval(proxies)
 
         # 读取json文件
         read_json = ReadJson()

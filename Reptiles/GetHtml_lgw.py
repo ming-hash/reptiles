@@ -1,12 +1,28 @@
 # -*- coding:utf-8 -*-
-
 import random
 import time
-import requests
+import os
+import sys
 import json
 import re
+
+import requests
 from bs4 import BeautifulSoup
 from urllib import parse  # 用来转换中文和url
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from myconfig import readConfig
+from common.PROXY_IP import PROXY
+from common.GetHtmlCommon import ReadJson, GatHtml
+
+dbconfig = {
+    "host": readConfig.DB_IP,
+    "port": readConfig.DB_PORT,
+    "user": readConfig.DB_USER,
+    "passwd": readConfig.DB_PASSWORD,
+    "db": readConfig.DB_DATABASES,
+    "charset": readConfig.DB_CHARSET
+}
 
 
 class LgwSpliceUrl:
@@ -180,3 +196,43 @@ class LgwSpliceUrl:
         """进入具体url中,读取招聘信息"""
         rown_dicts = {}
         pass
+
+
+if __name__ == "__main__":
+    # 获取代理IP列表
+    proxy = PROXY(dbconfig)
+    proxy_list = proxy.Get_db_storage_ip()
+    if proxy_list is not True:
+        ip_list = proxy.Get_ip_list1()
+        new_proxy_list = proxy.Get_effective_ip(ip_list)
+        proxy.Storage_db(new_proxy_list)
+        proxy_list = proxy.Get_db_storage_ip()
+    proxies = eval(random.choice(proxy_list))
+
+    # 读取json文件
+    read_json = ReadJson()
+    read_json.readall()
+    all_input = read_json.Connect_url()
+
+    # 获取拉勾网的条件url参数
+    l_keyword = read_json.edit_keyword(all_input[0], 2)
+    l_wuhan_area = read_json.read_wuhan_area(all_input[1], 2)
+    l_provide_salary = read_json.read_provide_salary(all_input[2], 2)
+    l_work_year = read_json.read_work_year(all_input[3], 2)
+    l_education = read_json.read_education(all_input[4], 2)
+
+    # 获取url_head参数
+    GatHtml = GatHtml()
+    lgw_url_head = GatHtml.lgw_url
+
+    # 拼接拉勾网的url
+    LgwSpliceUrl = LgwSpliceUrl()
+    url_start, url, = LgwSpliceUrl.Lgw_url(lgw_url_head, l_keyword, l_wuhan_area, l_provide_salary, l_work_year,l_education)
+
+    id_url_dict, rown_dicts, error_dicts = LgwSpliceUrl.Recruitment_url(url_start, url, l_keyword, proxies)
+    print(id_url_dict)
+    print(rown_dicts)
+
+    print("错误的")
+    print(error_dicts)
+    print("**" * 20)

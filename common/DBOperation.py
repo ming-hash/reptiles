@@ -77,7 +77,7 @@ class DB:
                 return self._cursor.rowcount
         except pymysql.Error as e:
             self._error_code = e.args[0]
-            print ("Mysql execute error:",e.args[0],e.args[1])
+            print ("Mysql execute error:", e.args[0], e.args[1])
             return False
 
     def dml(self, sql):

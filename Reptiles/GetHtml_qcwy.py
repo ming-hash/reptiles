@@ -1,8 +1,13 @@
 # -*- coding:utf-8 -*-
 import re
+import os
+import sys
 
 import requests
 from bs4 import BeautifulSoup
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.GetHtmlCommon import ReadJson, GatHtml
 
 
 class QcwySpliceUrl:
@@ -156,7 +161,30 @@ class AnalysisHtml:
                 self.rown_dicts[id] = self.rown_lists
         return self.rown_dicts
 
-# id_url_dict = splice_url.Recruitment_url()
-#
-# analysis_html = Analysis_Html()  # 创建获取解析内容实例
-# rown_dicts = analysis_html.Analysis_url(id_url_dict)
+
+if __name__ == "__main__":
+    # 读取json文件
+    read_json = ReadJson()
+    read_json.readall()
+    all_input = read_json.Connect_url()
+
+    # 获取前程无忧的条件url参数
+    q_keyword = read_json.edit_keyword(all_input[0], 0)
+    q_wuhan_area = read_json.read_wuhan_area(all_input[1], 0)
+    q_provide_salary = read_json.read_provide_salary(all_input[2], 0)
+    q_work_year = read_json.read_work_year(all_input[3], 0)
+    q_education = read_json.read_education(all_input[4], 0)
+
+    # 获取url_head参数
+    GatHtml = GatHtml()
+    qcwy_url_head = GatHtml.qcwy_url
+
+    # 拼接前程无忧的url
+    QcwySpliceUrl = QcwySpliceUrl()
+    QcwySpliceUrl.Qcwy_url(qcwy_url_head, q_keyword, q_wuhan_area, q_provide_salary, q_work_year, q_education)
+    QcwySpliceUrl.Recruitment_url()
+
+    # id_url_dict = splice_url.Recruitment_url()
+    #
+    # analysis_html = Analysis_Html()  # 创建获取解析内容实例
+    # rown_dicts = analysis_html.Analysis_url(id_url_dict)
