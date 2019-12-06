@@ -1,31 +1,23 @@
 # -*- coding:utf-8 -*-
 import os
 import sys
+import queue
 
 import time
 import re
 import requests
 from bs4 import BeautifulSoup
 import threading
+import records
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.DBOperation import DB
 from myconfig import readConfig
-
-dbconfig = {
-    "host": readConfig.DB_IP,
-    "port": readConfig.DB_PORT,
-    "user": readConfig.DB_USER,
-    "passwd": readConfig.DB_PASSWORD,
-    "db": readConfig.DB_DATABASES,
-    "charset": readConfig.DB_CHARSET
-}
 
 
 class PROXY:
     """获取动态代理IP池，并存入数据库"""
 
-    def __init__(self, dbconfig):
+    def __init__(self):
         self.HEADERS = {
             "user-agent": "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.142 Safari/537.36",
             "accept-encoding": "gzip, deflate",
@@ -34,7 +26,9 @@ class PROXY:
         }
         self.range_n = 1
         self.TABLE = readConfig.table_proxy_ip
-        self.DB = DB(dbconfig)
+        self.DB = records.Database(
+            'mysql+pymysql://{}:{}@{}:{}/{}'.format(readConfig.DB_USER, readConfig.DB_PASSWORD, readConfig.DB_IP,
+                                                    readConfig.DB_PORT, readConfig.DB_DATABASES))
 
     def Get_ip_list1(self):
         """爬取免费代理IP网站上的IP及端口"""
@@ -94,7 +88,7 @@ class PROXY:
         print("代理列表抓取成功.")
         return ip_list
 
-    def Get_effective_ip(self, ip_list):
+    def Get_effective_ip(self, queue, index, ip_list):
         """验证代理IP有效性"""
         proxy_list = []
         new_proxy_list = []
@@ -106,7 +100,6 @@ class PROXY:
             proxy_ip = proxy_list[i]
             proxies = {'http': proxy_ip}
             try:
-                # response = requests.get("http://httpbin.org/ip", headers=headers, proxies=proxies,timeout = 3)
                 response = requests.get("http://www.baidu.com", headers=self.HEADERS, proxies=proxies, timeout=3)
                 if response.status_code == 200:
                     print(proxies)
@@ -115,61 +108,43 @@ class PROXY:
             except:
                 pass
         print("总共获取 {} 个可用代理IP".format(len(new_proxy_list)))
+        queue.put((index, new_proxy_list))
         return new_proxy_list
 
     def Storage_db(self, proxy_list):
-        """将有效的代理IP存入数据库"""
+        """将单条有效的代理IP存入数据库,需要传入这类形式：[{'http': 'http://183.146.156.9:9999'}, {'http': 'http://27.43.186.47:9999'}]"""
 
         create_table_sql = """create table if not exists `{}` (
                               `times` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                               `proxy` varchar(100));""".format(self.TABLE)
 
         try:
-            count = 0
-            self.DB.dml(create_table_sql)
-            print("正在将代理IP写入数据库")
+            self.DB.query(create_table_sql)
             for proxy in proxy_list:
-                insert_table_sql = """insert into {}(proxy) values("{}")""".format(self.TABLE, proxy)
-                self.DB.dml(insert_table_sql)
-                count += 1
-            self.DB.close()
-            print("写入 {} 个代理IP成功".format(count))
-        except:
-            print("写入数据库异常")
+                insert_table_sql = """insert into {0}(proxy) values("{1}")""".format(self.TABLE, proxy)
+                self.DB.query(insert_table_sql)
+            print("写入数据库成功")
+        except Exception as e:
+            print("ERROR:{}".format(e))
 
-    def Get_db_storage_ip(self):
-        """从数据库中获取最新时间段内的代理IP"""
-        show_data_list = []
-        select_sql = """select proxy from proxy_ip where unix_timestamp(times) >= (unix_timestamp() - 43200) order by times limit 10;"""
+    # def Get_db_storage_ip(self):
+    #     """从数据库中获取最新时间段内的代理IP"""
+    #     show_data_list = []
+    #     select_sql = """select proxy from proxy_ip where unix_timestamp(times) >= (unix_timestamp() - 43200) order by times limit 10;"""
+    #
+    #     show_database = self.DB.query(select_sql)
+    #     for data in show_database:
+    #         show_data_list.append(data["proxy"])
+    #     return list(show_data_list)
 
-        show_database = self.DB.select(select_sql)
-        for data in show_database:
-            show_data_list.append(data["proxy"])
+    def Close_db(self):
         self.DB.close()
-        return list(show_data_list)
-
-
-class MyThread(threading.Thread):  # 封装threading.Thread
-    def __init__(self, func, args=()):
-        super(MyThread, self).__init__()
-        self.func = func
-        self.args = args
-
-    def run(self):
-        time.sleep(2)
-        self.result = self.func(*self.args)
-
-    def get_result(self):
-        threading.Thread.join(self)  # 等待线程执行完毕
-        try:
-            return self.result
-        except Exception:
-            return None
 
 
 if __name__ == "__main__":
     procedure_starttime = time.perf_counter()
-    proxy = PROXY(dbconfig)
+    proxy = PROXY()
+    queue = queue.Queue()
 
     # 多线程方法
     # 抓取IP
@@ -178,45 +153,27 @@ if __name__ == "__main__":
     ip_list3 = proxy.Get_ip_list3()
 
     # 创建三个线程实例：验证IP有效性
-    thread_get_ip_list1 = MyThread(proxy.Get_effective_ip, [ip_list1])
-    thread_get_ip_list2 = MyThread(proxy.Get_effective_ip, [ip_list2])
-    thread_get_ip_list3 = MyThread(proxy.Get_effective_ip, [ip_list3])
+    thread_get_ip_list1 = threading.Thread(target=proxy.Get_effective_ip, args=[queue, 1, ip_list1])
+    thread_get_ip_list2 = threading.Thread(target=proxy.Get_effective_ip, args=[queue, 2, ip_list2])
+    thread_get_ip_list3 = threading.Thread(target=proxy.Get_effective_ip, args=[queue, 3, ip_list3])
 
-    # 启动运行线程：验证IP有效性
-    thread_get_ip_list1.start()
-    thread_get_ip_list2.start()
-    thread_get_ip_list3.start()
+    # 启动运行、阻塞线程：验证IP有效性
+    thread_list = [thread_get_ip_list1, thread_get_ip_list2, thread_get_ip_list3]
+    for thread in thread_list: thread.start()
+    for thread in thread_list: thread.join()
 
-    thread_get_ip_list1.join()  # 阻塞线程1：验证IP有效性
-    result1 = thread_get_ip_list1.get_result()  # 将线程1输出结果取出
-    thread_write_db1 = MyThread(proxy.Storage_db, [result1])  # 创建线程实例1：将有效IP写入数据库
-    thread_write_db1.start()  # 启动运行线程1：将有效IP写入数据库
-    thread_write_db1.join()
+    # 将线程中的结果传出
+    rv = []
+    while not queue.empty():  # 如果队列为空，返回True
+        rv.append(queue.get())
 
-    thread_get_ip_list2.join()
-    result2 = thread_get_ip_list1.get_result()
-    thread_write_db2 = MyThread(proxy.Storage_db, [result2])
-    thread_write_db2.start()
-    thread_write_db2.join()
+    # 将所有队列中的内容取出，并重新形成列表，并更新至数据库
+    for result in rv:
+        if result[1]:
+            proxy_list = [proxy_ip for proxy_ip in result[1]]
+            print(proxy_list)
+            proxy.Storage_db(proxy_list)
 
-    thread_get_ip_list3.join()
-    result3 = thread_get_ip_list1.get_result()
-    thread_write_db3 = MyThread(proxy.Storage_db, [result3])
-    thread_write_db3.start()
-    thread_write_db3.join()
-
-    # # 普通方法
-    # ip_list1 = proxy.Get_ip_list1()
-    # ip_list2 = proxy.Get_ip_list2()
-    # ip_list3 = proxy.Get_ip_list3()
-    #
-    # proxy_list1 = proxy.Get_effective_ip(ip_list1)
-    # proxy_list2 = proxy.Get_effective_ip(ip_list2)
-    # proxy_list3 = proxy.Get_effective_ip(ip_list3)
-    #
-    # proxy.Storage_db(proxy_list1)
-    # proxy.Storage_db(proxy_list2)
-    # proxy.Storage_db(proxy_list3)
-
+    proxy.Close_db()
     procedure_endtime = time.perf_counter()
     print("程序运行时间：{:.2f} 秒".format(procedure_endtime - procedure_starttime))
