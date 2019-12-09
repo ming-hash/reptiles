@@ -5,24 +5,15 @@ import os
 import sys
 import json
 import re
+import queue
 
 import requests
 from bs4 import BeautifulSoup
 from urllib import parse  # 用来转换中文和url
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from myconfig import readConfig
-from common.PROXY_IP import PROXY
 from common.GetHtmlCommon import ReadJson, GatHtml
-
-dbconfig = {
-    "host": readConfig.DB_IP,
-    "port": readConfig.DB_PORT,
-    "user": readConfig.DB_USER,
-    "passwd": readConfig.DB_PASSWORD,
-    "db": readConfig.DB_DATABASES,
-    "charset": readConfig.DB_CHARSET
-}
+import common.PROXY_IP
 
 
 class LgwSpliceUrl:
@@ -74,26 +65,24 @@ class LgwSpliceUrl:
         # 城市
         # City = {"city=城市&"}
         # 地区,不限=不添加参数
-
         url_start = "{0}jobs/list_{1}?{2}px=new&{3}{4}city=%E6%AD%A6%E6%B1%89&{5}#order".format(
             url_head, keyword, education, provide_salary, work_year, wuhan_area)
-        url = "{0}jobs/positionAjax.json?{1}px=new&{2}city=%E6%AD%A6%E6%B1%89&{3}{4}needAddtionalResult=false".format(
+        url_second = "{0}jobs/positionAjax.json?{1}px=new&{2}city=%E6%AD%A6%E6%B1%89&{3}{4}needAddtionalResult=false".format(
             url_head, education, provide_salary, wuhan_area, work_year)
-        return url_start, url
+        return url_start, url_second
 
     def Cookie(self, url_start, proxy_list):
-        proxy = eval(random.choice(proxy_list))
+        proxy = random.choice(proxy_list)
         session = requests.Session()
         session.get(url_start, headers=self.headers, timeout=3, proxies=proxy)  # 使用session维持同一个会话
         cookie = session.cookies  # 使用该会话的cookie
         return cookie
 
-    def Recruitment_url(self, url_start, url, keyword, proxies):
+    def Recruitment_url(self, url_start, url_second, keyword, proxies):
         """获取信息及url"""
         id_url_dict = {}
         rown_dicts = {}
         json_lists = []
-        error_dicts = {}
 
         strs = parse.unquote(keyword)
         session = requests.Session()
@@ -101,9 +90,9 @@ class LgwSpliceUrl:
         cookie = session.cookies  # 使用该会话的cookie
 
         form_data_page = {'first': 'true', 'pn': 1, 'kd': strs}
-        response_page = session.post(url, data=form_data_page, headers=self.headers, cookies=cookie, timeout=3,
-                                     proxies=proxies)
+        response_page = session.post(url_second, data=form_data_page, headers=self.headers, cookies=cookie, timeout=3,proxies=proxies)
         json_dict_page = json.loads(response_page.text)
+        print(json_dict_page)
         recruit_msg_page = json_dict_page["content"]["positionResult"]
         print("获取总招聘信息：{}".format(recruit_msg_page["totalCount"]))
 
@@ -118,79 +107,65 @@ class LgwSpliceUrl:
             # 获取所有json内容，并拼接成列表
             for n in range(1, count_page + 1):
                 form_data = {'first': 'true', 'pn': n, 'kd': strs}
-                response = session.post(url, data=form_data, headers=self.headers, cookies=cookie, timeout=3,
-                                        proxies=proxies)
+                response = session.post(url_second, data=form_data, headers=self.headers, cookies=cookie, timeout=3,proxies=proxies)
                 json_lists.append(json.loads(response.text))
 
-            # 循环读取所有json内容，并解析内容
+            # 循环直接读取所有json内容，并解析内容
             for json_dict in json_lists:
                 recruit_msg = json_dict["content"]["positionResult"]
                 showId = json_dict["content"]["showId"]
                 for list in recruit_msg["result"]:
                     positionId = list["positionId"]
                     url2 = "https://www.lagou.com/jobs/{0}.html?show={1}".format(positionId, showId)
-                    print(url2)
                     id_url_dict[positionId] = url2
-                    soup_html = BeautifulSoup(
-                        session.get(url2, headers=self.headers, cookies=cookie, timeout=3, proxies=proxies).text,
-                        "lxml")
-
+                    # soup_html = BeautifulSoup(
+                    #     session.get(url2, headers=self.headers, cookies=cookie, timeout=3, proxies=proxies).text,
+                    #     "lxml")
                     # 薪资
                     money = list["salary"]
-
                     # 福利
                     welfare = list["positionAdvantage"]
-
                     # 地区
                     region = list["city"]
-
                     # 工作年限
                     workyear = list["workYear"]
-
                     # 学历要求
                     education = list["education"]
-
                     # 招聘人数
                     hiringnumber = ""
-
                     # 发布时间
                     releasetime = list["createTime"]
-
                     # 招聘职位
                     position = list["positionName"]
-
                     # 公司名称
                     company_name = list["companyFullName"]
-
-                    # 岗位职责
-                    positioninformation1 = soup_html.find("div", {"class": re.compile("job-detail")})
-                    # 工作地址
-                    workaddress1 = soup_html.find("div", {"class": "work_addr"})
-                    if positioninformation1 and workaddress1:
-                        positioninformation = positioninformation1.text
-                        workaddress = re.sub(r"[ |\n|查看地图]", "", workaddress1.text)
-                    elif positioninformation1 is None and workaddress1:
-                        error_dicts[positionId] = url2
-                        positioninformation = "错误"
-                        print(soup_html)
-                        break
-                    elif workaddress1 is None and positioninformation1:
-                        error_dicts[positionId] = url2
-                        workaddress1 = "错误"
-                        print(soup_html)
-                        break
-                    elif workaddress1 is None and positioninformation1 is None:
-                        error_dicts[positionId] = url2
-                        positioninformation = "错误"
-                        workaddress1 = "错误"
-                        print(soup_html)
-                        break
-
+                    # # 岗位职责
+                    # positioninformation1 = soup_html.find("div", {"class": re.compile("job-detail")})
+                    # # 工作地址
+                    # workaddress1 = soup_html.find("div", {"class": "work_addr"})
+                    # if positioninformation1 and workaddress1:
+                    #     positioninformation = positioninformation1.text
+                    #     workaddress = re.sub(r"[ |\n|查看地图]", "", workaddress1.text)
+                    # elif positioninformation1 is None and workaddress1:
+                    #     error_dicts[positionId] = url2
+                    #     positioninformation = "错误"
+                    #     # print(soup_html)
+                    #     break
+                    # elif workaddress1 is None and positioninformation1:
+                    #     error_dicts[positionId] = url2
+                    #     workaddress1 = "错误"
+                    #     # print(soup_html)
+                    #     break
+                    # elif workaddress1 is None and positioninformation1 is None:
+                    #     error_dicts[positionId] = url2
+                    #     positioninformation = "错误"
+                    #     workaddress1 = "错误"
+                    #     # print(soup_html)
+                    #     break
                     time.sleep(random.randint(1, 3))
                     id_url_dict[positionId] = url2
-                    rown_dicts[positionId] = [money, welfare, region, workyear, education, hiringnumber, releasetime, position, company_name, positioninformation, workaddress]
-                    print("==" * 20)
-            return id_url_dict, rown_dicts, error_dicts
+                    rown_dicts[positionId] = [money, welfare, region, workyear, education, hiringnumber, releasetime, position, company_name]
+            return id_url_dict, rown_dicts
 
     def Analysis_url(self, id_url_list, proxy_list):
         """进入具体url中,读取招聘信息"""
@@ -200,14 +175,15 @@ class LgwSpliceUrl:
 
 if __name__ == "__main__":
     # 获取代理IP列表
-    proxy = PROXY(dbconfig)
+    proxy = common.PROXY_IP.PROXY()
+    queue = queue.Queue()
     proxy_list = proxy.Get_db_storage_ip()
-    if proxy_list is not True:
-        ip_list = proxy.Get_ip_list1()
-        new_proxy_list = proxy.Get_effective_ip(ip_list)
-        proxy.Storage_db(new_proxy_list)
+    if not proxy_list:
+        common.PROXY_IP.run_proxy(queue)
         proxy_list = proxy.Get_db_storage_ip()
-    proxies = eval(random.choice(proxy_list))
+        proxy.Close_db()
+
+    proxies = {"http": random.choice(proxy_list)}  # 输出：{"http":"http://60.218.172.171:8118"}
 
     # 读取json文件
     read_json = ReadJson()
@@ -227,12 +203,10 @@ if __name__ == "__main__":
 
     # 拼接拉勾网的url
     LgwSpliceUrl = LgwSpliceUrl()
-    url_start, url, = LgwSpliceUrl.Lgw_url(lgw_url_head, l_keyword, l_wuhan_area, l_provide_salary, l_work_year,l_education)
+    url_start, url_second, = LgwSpliceUrl.Lgw_url(lgw_url_head, l_keyword, l_wuhan_area, l_provide_salary, l_work_year,l_education)
+    # print("第一个url：{}".format(url_start))
+    # print("第二个url：{}".format(url))
 
-    id_url_dict, rown_dicts, error_dicts = LgwSpliceUrl.Recruitment_url(url_start, url, l_keyword, proxies)
+    id_url_dict, rown_dicts= LgwSpliceUrl.Recruitment_url(url_start, url_second, l_keyword, proxies)
     print(id_url_dict)
     print(rown_dicts)
-
-    print("错误的")
-    print(error_dicts)
-    print("**" * 20)

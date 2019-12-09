@@ -18,7 +18,16 @@ class QcwySpliceUrl:
         self.id_url_dict = {}
 
     def Qcwy_url(self, url_head, keyword, wuhan_area, provide_salary, work_year, education):
-        """拼接成完整查询结果url以及nexturl"""
+        """
+        拼接成完整查询结果url以及nexturl
+        :param url_head: 主体请求url
+        :param keyword: 工作关键字
+        :param wuhan_area: 武汉工作区域
+        :param provide_salary:薪资范围
+        :param work_year:工作年限
+        :param education:学历要求
+        :return:以列表的形式输出符合过滤条件的所有页面url
+        """
 
         qcwy_url = "{0}/list/180200,{1},0000,00,9,{2},{3},2,1.html?lang=c&stype=&postchannel=0000&workyear={4}&cotype={5}&degreefrom=99&jobterm=99&companysize=99&lonlat=0%2C0&radius=-1&ord_field=0&confirmdate=9&fromType=&dibiaoid=0&address=&line=&specialarea=00&from=&welfare=".format(
             url_head,
@@ -54,12 +63,14 @@ class QcwySpliceUrl:
             return "你输入的筛选条件未找到招聘信息"
 
     def Recruitment_url(self):
-        """获取所有的招聘详情url"""
+        """
+        爬取所有页面中符合
+        :return: 输出字典形式的爬取的所有id、招聘详情url
+        """
         for i in range(len(self.next_url_list)):
             response = requests.get(self.next_url_list[i], timeout=6)
             response.encoding = "gbk"
             soup_i = BeautifulSoup(response.text, "lxml")
-
             soup_i1 = soup_i.find("div", {"class": "dw_table"})
             soup_i2 = soup_i1.find_all("div", {"class": "el"})
 
@@ -74,7 +85,9 @@ class QcwySpliceUrl:
 
 
 class AnalysisHtml:
-    """解析招聘信息中的具体信息"""
+    """
+    解析招聘信息中的具体信息
+    """
 
     def __init__(self):
         self.rown_dicts = {}
@@ -93,14 +106,18 @@ class AnalysisHtml:
         self.companyinformation = ""
 
     def Analysis_url(self, id_url_dict):
+        """
+        解析所有招聘详情页面
+        :param id_url_dict:字典形式的所有id、url
+        :return:以字典的形式，id为key，解析后的内容列表为value，输出所有的解析内容
+        """
         for id in id_url_dict.keys():
             url = id_url_dict[id]
+            print(url)
             # self.rown_lists = []                #在该循环中将该变量置为空，不然这个变量叠加字符串
             if url == "http://51rz.51job.com/sc/show_job_detail.php?jobid=100911781":  # 去除与大部分招聘详细格式不同的招聘页面
                 pass
             else:
-                print(url)
-
                 self.welfare = ""  # 在该循环中将该变量置为空，不然这个变量叠加字符串
                 self.positioninformation = ""  # 在该循环中将该变量置为空，不然这个变量叠加字符串
 
@@ -182,9 +199,10 @@ if __name__ == "__main__":
     # 拼接前程无忧的url
     QcwySpliceUrl = QcwySpliceUrl()
     QcwySpliceUrl.Qcwy_url(qcwy_url_head, q_keyword, q_wuhan_area, q_provide_salary, q_work_year, q_education)
-    QcwySpliceUrl.Recruitment_url()
+    id_url_dict = QcwySpliceUrl.Recruitment_url()
+    print(id_url_dict)
 
-    # id_url_dict = splice_url.Recruitment_url()
-    #
-    # analysis_html = Analysis_Html()  # 创建获取解析内容实例
-    # rown_dicts = analysis_html.Analysis_url(id_url_dict)
+    # 解析所有招聘详情url中的内容
+    analysis_html = AnalysisHtml()
+    rown_dicts = analysis_html.Analysis_url(id_url_dict)
+    print(rown_dicts)

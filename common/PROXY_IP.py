@@ -27,8 +27,7 @@ class PROXY:
         self.range_n = 1
         self.TABLE = readConfig.table_proxy_ip
         self.DB = records.Database(
-            'mysql+pymysql://{}:{}@{}:{}/{}'.format(readConfig.DB_USER, readConfig.DB_PASSWORD, readConfig.DB_IP,
-                                                    readConfig.DB_PORT, readConfig.DB_DATABASES))
+            'mysql+pymysql://{}:{}@{}:{}/{}'.format(readConfig.DB_USER, readConfig.DB_PASSWORD, readConfig.DB_IP,readConfig.DB_PORT, readConfig.DB_DATABASES))
 
     def Get_ip_list1(self):
         """爬取免费代理IP网站上的IP及端口"""
@@ -121,30 +120,44 @@ class PROXY:
         try:
             self.DB.query(create_table_sql)
             for proxy in proxy_list:
-                insert_table_sql = """insert into {0}(proxy) values("{1}")""".format(self.TABLE, proxy)
+                insert_table_sql = """insert into {0}(proxy) values("{1}")""".format(self.TABLE, proxy["http"])
                 self.DB.query(insert_table_sql)
             print("写入数据库成功")
         except Exception as e:
             print("ERROR:{}".format(e))
 
-    # def Get_db_storage_ip(self):
-    #     """从数据库中获取最新时间段内的代理IP"""
-    #     show_data_list = []
-    #     select_sql = """select proxy from proxy_ip where unix_timestamp(times) >= (unix_timestamp() - 43200) order by times limit 10;"""
-    #
-    #     show_database = self.DB.query(select_sql)
-    #     for data in show_database:
-    #         show_data_list.append(data["proxy"])
-    #     return list(show_data_list)
+    def Storage_dbs(self, proxy_list):
+        """将多条有效的代理IP存入数据库,需要传入这类形式：[{'http': 'http://183.146.156.9:9999'}, {'http': 'http://27.43.186.47:9999'}]"""
+
+        create_table_sql = """create table if not exists `{}` (
+                              `times` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                              `proxy` varchar(100));""".format(self.TABLE)
+
+        try:
+            self.DB.query(create_table_sql)
+            insert_table_sql = """insert into {0}(proxy) values(:http)""".format(self.TABLE)
+            self.DB.bulk_query(insert_table_sql, proxy_list)
+            print("写入数据库成功")
+        except Exception as e:
+            print("ERROR:{}".format(e))
+
+    def Get_db_storage_ip(self):
+        """从数据库中获取最新时间段内的代理IP"""
+        show_data_list = []
+        select_sql = """select proxy from proxy_ip where unix_timestamp(times) >= (unix_timestamp() - 43200) order by times desc limit 10;"""
+
+        show_database = self.DB.query(select_sql)
+        for data in show_database:
+            show_data_list.append(data["proxy"])
+        return list(show_data_list)
 
     def Close_db(self):
         self.DB.close()
 
 
-if __name__ == "__main__":
+def run_proxy(queue):
     procedure_starttime = time.perf_counter()
     proxy = PROXY()
-    queue = queue.Queue()
 
     # 多线程方法
     # 抓取IP
@@ -171,9 +184,13 @@ if __name__ == "__main__":
     for result in rv:
         if result[1]:
             proxy_list = [proxy_ip for proxy_ip in result[1]]
-            print(proxy_list)
             proxy.Storage_db(proxy_list)
 
     proxy.Close_db()
     procedure_endtime = time.perf_counter()
     print("程序运行时间：{:.2f} 秒".format(procedure_endtime - procedure_starttime))
+
+
+if __name__ == "__main__":
+    queue = queue.Queue()
+    run_proxy(queue)
