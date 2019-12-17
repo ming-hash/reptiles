@@ -1,10 +1,12 @@
 # -*- coding:utf-8 -*-
 import os
 import sys
+import time
 import json
 import os
 from urllib import parse  # 用来转换中文和url
 import records
+import pymysql
 
 import requests
 from bs4 import BeautifulSoup
@@ -175,8 +177,10 @@ class WriteDB:
     """
 
     def __init__(self):
+        self.times = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(time.time())))
         self.DB = records.Database(
-            'mysql+pymysql://{}:{}@{}:{}/{}'.format(readConfig.DB_USER, readConfig.DB_PASSWORD, readConfig.DB_IP, readConfig.DB_PORT, readConfig.DB_DATABASES))
+            'mysql+pymysql://{}:{}@{}:{}/{}'.format(readConfig.DB_USER, readConfig.DB_PASSWORD, readConfig.DB_IP,
+                                                    readConfig.DB_PORT, readConfig.DB_DATABASES))
         self.qcwy_table1 = readConfig.qcwy_table1
         self.qcwy_table2 = readConfig.qcwy_table2
         self.zlzp_table1 = readConfig.zlzp_table1
@@ -280,36 +284,47 @@ class WriteDB:
             self.DB.query(self.lgw_create_table_sql2)
         return True
 
+    def delete_tables(self):
+        """删除所有表"""
+        for table in [self.qcwy_table1, self.qcwy_table2, self.zlzp_table1, self.zlzp_table2, self.lgw_table1,
+                      self.lgw_table2]:
+            self.DB.query("""drop table {};""".format(table))
+
     def qcwy_insert_html_url_table(self, id_url_dict):
         """写入前程无忧爬取的数据到数据库,将每条招聘的id、url存入htmlurl表中"""
         # 插入time,id,url数据，数据库中有则更新
+        select_html_url_sql = """select uuid from {};""".format(self.qcwy_table1)
+        uuid_list = [i["uuid"] for i in self.DB.query(select_html_url_sql).all(as_dict=True)]
         for key, value in id_url_dict.items():
-            if int(key) in self.DB.query("""select numbering from html_url;"""):
-                self.DB.query(
-                    """update html_url set times = "%s",url = "%s" where numbering = "%s";""" % (times, value, key))
+            if int(key) in uuid_list:
+                update_html_url_sql = """update {} set times = "{}",url = "{}" where uuid = "{}";""".format(
+                    self.qcwy_table1, self.times, value, key)
+                self.DB.query(update_html_url_sql)
             else:
-                self.DB.query(
-                    """insert into html_url(times,numbering,url) values("%s","%s","%s");""" % (times, key, value))
+                insert_html_url_sql = """insert into {}(times,uuid,url) values("{}","{}","{}");""".format(
+                    self.qcwy_table1, self.times, key, value)
+                self.DB.query(insert_html_url_sql)
 
     def qcwy_insert_html_content_table(self, rown_dicts):
         """将每条招聘的具体解析内容存入表中"""
         # 插入time,id等数据，数据库中有则更新
+        select_html_content_sql = """select uuid from {};""".format(self.qcwy_table2)
+        uuid_list = [i["uuid"] for i in self.DB.query(select_html_content_sql).all(as_dict=True)]
         for key, value in rown_dicts.items():
-            if int(key) in db.Select_db("""select numbering from html_content;"""):
+            if int(key) in uuid_list:
                 print("正在更新代号为 {} 的数据".format(key))
-                db.Insert_table("""update html_content set times = "%s",money = "%s",welfare = "%s",region = "%s",workyear = "%s",education = "%s",hiringnumber = "%s",releasetime = "%s",position = "%s",company_name = "%s",positioninformation = "%s",
-                                    workaddress = "%s",companyinformation = "%s" where numbering = "%s";""" % (
-                    times, value[0], value[1], value[2], value[3], value[4], value[5], value[6], value[7], value[8],
-                    value[9], value[10],
-                    pymysql.escape_string(value[11]), key))
+                update_html_content_sql = """
+                            update {} set times = "{}",money = "{}",welfare = "{}",region = "{}",workyear = "{}",education = "{}",hiringnumber = "{}",releasetime = "{}",position = "{}",company_name = "{}",positioninformation = "{}",workaddress = "{}",companyinformation = "{}" where uuid = "{}";""".format(
+                    self.qcwy_table2, self.times, value[0], value[1], value[2], value[3], value[4], value[5], value[6],
+                    value[7], value[8], value[9], value[10], pymysql.escape_string(value[11]), key)
+                self.DB.query(update_html_content_sql)
             else:
                 print("正在写入代号为 {} 的数据".format(key))
-                db.Insert_table("""insert into html_content(times,numbering,money,welfare,region,workyear,education,hiringnumber,releasetime,position,company_name,positioninformation,
-                                    workaddress,companyinformation)
-                      values("{0}","{1}","{2}","{3}","{4}","{5}","{6}","{7}","{8}","{9}","{10}","{11}","{12}","{13}");""".format(
-                    times, key, value[0], value[1], value[2], value[3], value[4], value[5], value[6], value[7],
-                    value[8], value[9], value[10],
-                    pymysql.escape_string(value[11])))
+                insert_html_content_sql = """
+                            insert into {}(times,uuid,money,welfare,region,workyear,education,hiringnumber,releasetime,position,company_name,positioninformation,workaddress,companyinformation) values("{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}");""".format(
+                    self.qcwy_table2, self.times, key, value[0], value[1], value[2], value[3], value[4], value[5],
+                    value[6], value[7], value[8], value[9], value[10], pymysql.escape_string(value[11]))
+                self.DB.query(insert_html_content_sql)
 
     def zlzp_insert_html_url_table(self, id_url_dict):
         """将每条招聘的id、url存入htmlurl表中"""
@@ -397,7 +412,7 @@ class WriteDB:
 if __name__ == "__main__":
     db = WriteDB()
     db.check_tables()
-    id_url_dict = {
+    qcwy_id_url_dict = {
         '100911781': 'https://jobs.51job.com/wuhan-jxq/100911781.html?s=01&t=0',
         '116935497': 'https://jobs.51job.com/wuhan/116935497.html?s=01&t=0',
         '118866038': 'https://jobs.51job.com/wuhan-hsq/118866038.html?s=01&t=0',
@@ -534,7 +549,7 @@ if __name__ == "__main__":
         '116780939': 'https://jobs.51job.com/wuhan/116780939.html?s=01&t=0',
         '118207652': 'https://jobs.51job.com/wuhan-dhxjs/118207652.html?s=01&t=0',
         '115784314': 'https://jobs.51job.com/wuhan/115784314.html?s=01&t=0'}
-    rown_dicts = {
+    qcwy_rown_dicts = {
         '100911781': ['', '五险一金|补充医疗保险|免费班车|员工旅游|专业培训|绩效奖金|年终奖金|定期体检|', '武汉-江夏区', '1年经验', '大专', '招若干人', '12-09发布',
                       '测试工程师', '“前程无忧”51job.com（光谷）',
                       '\n\n岗位职责：\n1、参与产品开发和需求讨论，制订测试计划，并与团队成员沟通确保测试能顺利执行并完成；\n2、根据产品设计、需求文档等，自行设计和编写测试用例；\n3、自行搭建产品测试环境，并完成相关的测试，对测试实施过程中发现的问题进行跟踪分析和反馈，完整地记录测试结果，编写完整的测试报告等相关的技术文档；\n4、组织产品的测试实施工作，保障测试的进展和完成，及时沟通解决重大测试问题，确保测试目标的达成；\n5、总结测试过程中发现的问题，做好记录、及时反馈，并提出书面分析和改善对策报告。\n\n任职要求：\n1、1年以上产品测试经验；\n2、了解并使用相关测试工具，熟悉测试计划、测试用例、测试方案、bug跟踪及测试报告的实施；\n3、具备良好的逻辑分析能力，能根据业务需求及项目文档快速理解业务及需求；\n4、具备良好沟通、学习能力，有团队合作精神，工作责任心强。\n\n职能类别：软件测试系统测试\n关键字：测试软件测试\n',
@@ -1169,7 +1184,157 @@ if __name__ == "__main__":
                       '工作职责\n1.有效执行集成测试及系统测试，提交测试报告；\n2.负责底层或上层软件测试；\n3.分析并理解软件需求，编写、执行和维护测试用例；\n4.开发测试工具，执行自动化测试，提高测试效率；\n5.跟踪定位产品软件中的缺陷或问题，并提出改进意见。\n任职要求\n1.生物医学工程、计算机科学、自动化及其他相关工科专业，本科及以上学历，硕士优先；\n2.有优秀的学习能力和自我驱动力；\n3.具有良好的团队合作精神和协作能力；\n4.具有编程能力和兴趣，至少熟练掌握一种编程语言，如C/C++/C#/python；\n5.熟悉一种或多种测试工具，有软件开发/测试经验者优先。\n\n职能类别：大学/大专应届毕业生\n',
                       '职能类别：大学/大专应届毕业生',
                       '联影医疗技术集团有限公司是一家全球领先的医疗科技企业，致力于为全球客户提供高性能医学影像、放疗产品及医疗信息化、智能化解决方案。公司于2011年成立，总部位于上海，同时在美国休斯敦、克利夫兰、康科德、波士顿和国内武汉、深圳、常州、贵州等地设立子公司及研发中心。联影拥有一支世界级人才团队，包括140余位海归科学家，500余位深具行业研发及管理经验的专业人士。目前，联影人才梯队总数达3600多人，其中40%以上为研发人员。截至目前，联影已向市场推出掌握完全自主知识产权的63款产品，包括全景动态扫描PET-CT（2米PET-CT）、“时空一体”超清TOF PET/MR、光梭3.0T MR、160层北斗CT、一体化CT-linac等一批世界首创和中国首创产品，整体性能指标达到国际一流水平，部分产品和技术实现世界范围内的引领。\xa0\xa0\xa0\xa0目前，联影产品已进驻美国、日本等全球18个国家和地区的3300多家医疗及科研机构，包括350多家***医院。2016-2018年，联影PET-CT及中高端DR在国内新增市场的产品份额持续3年位列***。基于uCloud联影智慧医疗云，联影结合移动互联网、云计算、人工智能、大数据分析等前沿技术，为政府、医院、科研机构和个人量身定制一系列云端智能化解决方案。2014年至今，联影助力上海、安徽、福建、贵州、湖北等19个省市的地方政府搭建分级诊疗体系，覆盖医院超过1700家，覆盖人群超过1亿。基于uAI智能平台，联影致力于打造“全栈全谱”的跨模态AI解决方案，贯穿疾病成像、筛查、随访、诊断、治疗、评估各环节，为医疗设备和医生赋能，让成像更好、更快、更安全、更经济，大幅提升医生诊断效率和精准度。2017年9月，联影以333.33亿元估值完成A轮融资，融资金额33.33亿元***，成为中国医疗设备行业***单笔私募融资。以“成为世界级医疗创新引领者”为愿景，“创造不同，为健康大同”为使命，联影正在构建一个以预防、诊断、治疗、康复全线产品为基础，以uCloud联影智慧医疗云为桥梁，以第三方精准医学诊断服务为入口，以大数据为智慧，由智能芯片与联影uAI人工智能平台全面赋能的全智能化医疗健康生态。通过与全球高校、医院、研究机构及产业合作伙伴的深度协同，持续提升全球高端医疗设备及服务可及性，为客户创造更多价值。']}
+    zlzp_id_url_list = [
+        {'id': 'CC144045072J00233452604', 'position': '软件测试工程师（中级）', 'company_name': '上海国响信息技术有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-10 16:40:58', 'money': '8K-12K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC144045072J00233452604.htm'},
+        {'id': 'CC451534410J00354769202', 'position': '软件测试工程师(物联网)', 'company_name': '浙江宇视科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-10-22 19:32:19', 'money': '8K-15K', 'education': '本科', 'workyear': '1-3年',
+         'id_url': 'https://jobs.zhaopin.com/CC451534410J00354769202.htm'},
+        {'id': 'CC451534410J00369259302', 'position': '软件测试工程师(大安防)', 'company_name': '浙江宇视科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-11-15 08:57:09', 'money': '6K-12K', 'education': '本科', 'workyear': '不限',
+         'id_url': 'https://jobs.zhaopin.com/CC451534410J00369259302.htm'},
+        {'id': 'CC205108417J00198735602', 'position': '系统测试工程师-技术中心-合肥/武汉', 'company_name': '科大讯飞股份有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-12-10 10:23:08', 'money': '10K-15K', 'education': '本科',
+         'workyear': '3-5年', 'id_url': 'https://jobs.zhaopin.com/CC205108417J00198735602.htm'},
+        {'id': 'CC000544466J00197152709', 'position': '测试主管（非外包）', 'company_name': '软通动力信息技术(集团)有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-11-25 16:44:35', 'money': '7K-12K', 'education': '本科',
+         'workyear': '5-10年', 'id_url': 'https://jobs.zhaopin.com/CC000544466J00197152709.htm'},
+        {'id': 'CC599223521J00140894209', 'position': 'qa测试工程师', 'company_name': '北京云族佳科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-02 10:22:56', 'money': '10K-15K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC599223521J00140894209.htm'},
+        {'id': 'CC152838414J00237402402', 'position': '嵌入式软件工程师', 'company_name': '盛视科技股份有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-11-27 08:27:46', 'money': '10K-15K', 'education': '大专', 'workyear': '1-3年',
+         'id_url': 'https://jobs.zhaopin.com/CC152838414J00237402402.htm'},
+        {'id': 'CC479050586J00399367703', 'position': '高级测试开发工程师', 'company_name': '江西国泰利民信息科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-06 14:07:01', 'money': '15K-20K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC479050586J00399367703.htm'},
+        {'id': 'CC183877520J00192859014', 'position': 'android系统测试工程师', 'company_name': '易视腾科技股份有限公司北京分公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-12-11 11:22:23', 'money': '8K-12K', 'education': '本科',
+         'workyear': '1-3年', 'id_url': 'https://jobs.zhaopin.com/CC183877520J00192859014.htm'},
+        {'id': 'CC144045072J00141821304', 'position': '测试经理', 'company_name': '上海国响信息技术有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-03 10:16:59', 'money': '10K-15K', 'education': '本科', 'workyear': '5-10年',
+         'id_url': 'https://jobs.zhaopin.com/CC144045072J00141821304.htm'},
+        {'id': 'CC152838414J00351994202', 'position': 'C++前端软件开发工程师', 'company_name': '盛视科技股份有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-05 09:01:39', 'money': '10K-20K', 'education': '大专', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC152838414J00351994202.htm'},
+        {'id': 'CC722374080J00095997514', 'position': '高级测试工程师', 'company_name': '北京锦益网络科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-11 10:47:52', 'money': '12K-16K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC722374080J00095997514.htm'},
+        {'id': 'CC463581515J00254618708', 'position': '测试工程师(武汉)', 'company_name': '深圳市星商电子商务有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-12 09:31:19', 'money': '7K-14K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC463581515J00254618708.htm'},
+        {'id': 'CC451534410J00161867002', 'position': '测试工程师(武汉研究所)', 'company_name': '浙江宇视科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-11 16:54:58', 'money': '6K-12K', 'education': '本科', 'workyear': '1年以下',
+         'id_url': 'https://jobs.zhaopin.com/CC451534410J00161867002.htm'},
+        {'id': 'CC624677922J00433174901', 'position': '电堆系统测试工程师', 'company_name': '武汉地质资源环境工业技术研究院有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-12-03 19:54:29', 'money': '8K-12K', 'education': '本科',
+         'workyear': '3-5年', 'id_url': 'https://jobs.zhaopin.com/CC624677922J00433174901.htm'},
+        {'id': 'CC152838414J00365278502', 'position': 'C++软件工程师', 'company_name': '盛视科技股份有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-02 08:30:49', 'money': '10K-20K', 'education': '大专', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC152838414J00365278502.htm'},
+        {'id': 'CC120086316J00114035914', 'position': 'C++软件工程师（音视频）', 'company_name': '北京中庆现代技术股份有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-12-11 17:15:06', 'money': '15K-25K', 'education': '本科',
+         'workyear': '3-5年', 'id_url': 'https://jobs.zhaopin.com/CC120086316J00114035914.htm'},
+        {'id': 'CC603465980J00457225407', 'position': '中级测试工程师--外派中众邦银行', 'company_name': '深圳市睿服科技有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-12-10 10:31:17', 'money': '10K-15K', 'education': '本科',
+         'workyear': '3-5年', 'id_url': 'https://jobs.zhaopin.com/CC603465980J00457225407.htm'},
+        {'id': 'CC222003919J90250101000', 'position': 'C/C++软件研发工程师', 'company_name': '深圳市财富趋势科技股份有限公司武汉研发中心',
+         'region': '武汉-洪山区', 'releasetime': '2019-12-12 14:30:11', 'money': '8K-15K', 'education': '本科',
+         'workyear': '不限', 'id_url': 'https://jobs.zhaopin.com/222003919250101.htm'},
+        {'id': 'CC265416683J00145338515', 'position': '软件开发工程师', 'company_name': '北京灵思创奇科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-05 14:23:49', 'money': '10K-13K', 'education': '本科', 'workyear': '1-3年',
+         'id_url': 'https://jobs.zhaopin.com/CC265416683J00145338515.htm'},
+        {'id': 'CC120401617J00201218009', 'position': '中级测试工程师（武汉）', 'company_name': '天地伟业技术有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-11-11 23:16:39', 'money': '8K-12K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC120401617J00201218009.htm'},
+        {'id': 'CC120401617J00201218209', 'position': '高级测试工程师（武汉）', 'company_name': '天地伟业技术有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-11-11 23:21:39', 'money': '12K-16K', 'education': '本科', 'workyear': '5-10年',
+         'id_url': 'https://jobs.zhaopin.com/CC120401617J00201218209.htm'},
+        {'id': 'CC706544827J00424785403', 'position': '嵌入式软件总工程师', 'company_name': '武汉百络优物联科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-17 09:27:30', 'money': '12K-20K', 'education': '本科', 'workyear': '5-10年',
+         'id_url': 'https://jobs.zhaopin.com/CC706544827J00424785403.htm'},
+        {'id': 'CC222003919J90250160000', 'position': 'C++软件研发工程师', 'company_name': '深圳市财富趋势科技股份有限公司武汉研发中心',
+         'region': '武汉-洪山区', 'releasetime': '2019-12-12 14:30:11', 'money': '8K-15K', 'education': '本科',
+         'workyear': '不限', 'id_url': 'https://jobs.zhaopin.com/222003919250160.htm'},
+        {'id': 'CC120975588J00435406907', 'position': '应用软件开发工程师', 'company_name': '杭州海康威视数字技术股份有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-10-11 17:43:14', 'money': '10K-15K', 'education': '本科',
+         'workyear': '1-3年', 'id_url': 'https://jobs.zhaopin.com/CC120975588J00435406907.htm'},
+        {'id': 'CC706544827J90250080000', 'position': '单片机软件工程师', 'company_name': '武汉百络优物联科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-17 09:27:29', 'money': '8K-15K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/706544827250080.htm'},
+        {'id': 'CC444556219J00135636509', 'position': '测试工程师', 'company_name': '北京华志信科技股份有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-16 10:23:21', 'money': '8K-15K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC444556219J00135636509.htm'},
+        {'id': 'CC368629084J00429940005', 'position': '高级嵌入式软件开发工程师', 'company_name': '深圳市智微智能科技开发有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-12-10 10:01:30', 'money': '10K-20K', 'education': '本科',
+         'workyear': '5-10年', 'id_url': 'https://jobs.zhaopin.com/CC368629084J00429940005.htm'},
+        {'id': 'CC434031920J90250362000', 'position': '武汉测试（中高级）', 'company_name': '上海康嘉信息技术有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-10-29 10:41:14', 'money': '6K-11K', 'education': '大专', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/434031920250362.htm'},
+        {'id': 'CC489646430J00213482904', 'position': '高级测试工程师', 'company_name': '上海劳勤信息技术有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-07-04 18:45:14', 'money': '10K-15K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC489646430J00213482904.htm'},
+        {'id': 'CC370675037J90250060000', 'position': '仪器软件开发工程师', 'company_name': '武汉市农业科学技术研究院农业环境安全检测研究所',
+         'region': '武汉-洪山区', 'releasetime': '2019-11-11 18:01:19', 'money': '10K-15K', 'education': '本科',
+         'workyear': '1-3年', 'id_url': 'https://jobs.zhaopin.com/370675037250060.htm'},
+        {'id': 'CC377258030J00452997207', 'position': '嵌入式linux工程师', 'company_name': '山东有人信息技术有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-17 12:17:14', 'money': '8K-12K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC377258030J00452997207.htm'},
+        {'id': 'CC701358820J00232335303', 'position': 'java开发工程师', 'company_name': '深圳微品致远信息科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-16 09:36:34', 'money': '9K-14K', 'education': '本科', 'workyear': '1-3年',
+         'id_url': 'https://jobs.zhaopin.com/CC701358820J00232335303.htm'},
+        {'id': 'CC479050586J00384668803', 'position': '高级java开发工程师', 'company_name': '江西国泰利民信息科技有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-11-25 09:18:38', 'money': '8K-15K', 'education': '本科',
+         'workyear': '3-5年', 'id_url': 'https://jobs.zhaopin.com/CC479050586J00384668803.htm'},
+        {'id': 'CC152838414J00257589302', 'position': '嵌入式驱动开发工程师', 'company_name': '盛视科技股份有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-11-27 08:27:46', 'money': '10K-15K', 'education': '大专', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC152838414J00257589302.htm'},
+        {'id': 'CC566202621J00177135815', 'position': '武汉 Java开发工程师', 'company_name': '北京嘉华汇诚科技股份有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-11-20 16:29:13', 'money': '7K-14K', 'education': '本科',
+         'workyear': '3-5年', 'id_url': 'https://jobs.zhaopin.com/CC566202621J00177135815.htm'},
+        {'id': 'CC542331724J00181604509', 'position': 'java研发工程师', 'company_name': '北京亚鸿世纪科技发展有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-04 09:35:03', 'money': '10K-20K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC542331724J00181604509.htm'},
+        {'id': 'CC253673710J00324773004', 'position': '高级C++开发工程师', 'company_name': '武汉精测电子集团股份有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-12-17 10:10:00', 'money': '12K-18K', 'education': '本科',
+         'workyear': '5-10年', 'id_url': 'https://jobs.zhaopin.com/CC253673710J00324773004.htm'},
+        {'id': 'CC420765026J00253622607', 'position': '销售专员（底薪4800）', 'company_name': '武汉达内职业培训学校', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-16 15:32:25', 'money': '10K-15K', 'education': '大专', 'workyear': '1-3年',
+         'id_url': 'https://jobs.zhaopin.com/CC420765026J00253622607.htm'},
+        {'id': 'CC633142422J00244147003', 'position': '嵌入式开发工程师(J10173)', 'company_name': '朗新科技股份有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-10-17 13:55:19', 'money': '10K-15K', 'education': '本科',
+         'workyear': '3-5年', 'id_url': 'https://jobs.zhaopin.com/CC633142422J00244147003.htm'},
+        {'id': 'CC722374080J00107370614', 'position': '高级android开发工程师', 'company_name': '北京锦益网络科技有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-12-02 10:43:51', 'money': '15K-20K', 'education': '大专',
+         'workyear': '3-5年', 'id_url': 'https://jobs.zhaopin.com/CC722374080J00107370614.htm'},
+        {'id': 'CC134637433J00237793508', 'position': '硬件工程师（武汉）', 'company_name': '上海柏飞电子科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-11 17:01:50', 'money': '8K-16K', 'education': '本科', 'workyear': '1-3年',
+         'id_url': 'https://jobs.zhaopin.com/CC134637433J00237793508.htm'},
+        {'id': 'CC610191783J00435758103', 'position': '漏洞挖掘工程师', 'company_name': '北京北大软件工程股份有限公司武汉分公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-11-28 14:44:37', 'money': '15K-30K', 'education': '本科',
+         'workyear': '不限', 'id_url': 'https://jobs.zhaopin.com/CC610191783J00435758103.htm'},
+        {'id': 'CC409648088J00417678201', 'position': '中级C++开发工程师(武汉)', 'company_name': '武汉华旗思创科技有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-12-16 08:45:58', 'money': '7.5K-15K', 'education': '本科',
+         'workyear': '3-5年', 'id_url': 'https://jobs.zhaopin.com/CC409648088J00417678201.htm'},
+        {'id': 'CC335741689J00495347901', 'position': '中高级java开发工程师', 'company_name': '武汉数为科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-12-14 19:27:44', 'money': '8K-15K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC335741689J00495347901.htm'},
+        {'id': 'CC482493526J00457178301', 'position': '高级JAVA开发工程师', 'company_name': '上海智隆信息技术股份有限公司',
+         'region': '武汉-洪山区', 'releasetime': '2019-10-24 17:25:57', 'money': '12K-20K', 'education': '本科',
+         'workyear': '5-10年', 'id_url': 'https://jobs.zhaopin.com/CC482493526J00457178301.htm'},
+        {'id': 'CC703257328J00183038410', 'position': 'Java开发工程师', 'company_name': '北京博运通达信息技术有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-11-06 14:24:03', 'money': '6.5K-13K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC703257328J00183038410.htm'},
+        {'id': 'CC537951725J00392095705', 'position': '中级开发工程师', 'company_name': '深圳竹云科技有限公司', 'region': '武汉-洪山区',
+         'releasetime': '2019-10-31 08:27:45', 'money': '8K-12K', 'education': '本科', 'workyear': '3-5年',
+         'id_url': 'https://jobs.zhaopin.com/CC537951725J00392095705.htm'}]
+    # zlzp_rown_dicts =
 
-    db.qcwy_insert_html_url_table(id_url_dict)
+    # db.qcwy_insert_html_url_table(qcwy_id_url_dict)
+    # db.qcwy_insert_html_content_table(qcwy_rown_dicts)
+
+
+
 
     db.Close_db()

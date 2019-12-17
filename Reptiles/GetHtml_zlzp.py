@@ -155,9 +155,9 @@ if __name__ == "__main__":
         proxy.Close_db()
     proxies = {"http": random.choice(proxy_list)}  # 输出：{"http":"http://60.218.172.171:8118"}
 
-    # # 读取json文件
-    # read_json = ReadJson()
-    # read_json.readall()
+    # 读取json文件
+    read_json = ReadJson()
+    read_json.readall()
     # all_input = read_json.Connect_url()
     #
     # # 获取智联招聘的条件url参数
@@ -170,14 +170,15 @@ if __name__ == "__main__":
     # # 获取url_head参数
     # GatHtml = GatHtml()
     # zlzp_url_head = GatHtml.zlzp_url
-
-    # 拼接智联招聘的url
+    #
+    # # 拼接智联招聘的url
     ZlzpSpliceUrl = ZlzpSpliceUrl()
     # zlzp_url = ZlzpSpliceUrl.Zlzp_url(zlzp_url_head, z_keyword, z_wuhan_area, z_provide_salary, z_work_year,z_education)
-    #
+
     # # 解析拼接后的查询url页面的信息
     # id_url_list = ZlzpSpliceUrl.Recruitment_url(zlzp_url, proxies)
-
+    # print(id_url_list)
+    # print("--"*20)
     id_url_list = [
         {
             "id": "CC451534410J00369259302",
@@ -202,7 +203,6 @@ if __name__ == "__main__":
             "id_url": "https://jobs.zhaopin.com/CC672290830J00178813814.htm"
         }
     ]
-    #
     rown_dicts = ZlzpSpliceUrl.Analysis_url(id_url_list, proxies)
     print("最后结果。。。。。")
     print(rown_dicts)
