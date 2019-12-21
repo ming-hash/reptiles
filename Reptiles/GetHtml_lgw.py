@@ -92,7 +92,7 @@ class LgwSpliceUrl:
         form_data_page = {'first': 'true', 'pn': 1, 'kd': strs}
         response_page = session.post(url_second, data=form_data_page, headers=self.headers, cookies=cookie, timeout=3,proxies=proxies)
         json_dict_page = json.loads(response_page.text)
-        print(json_dict_page)
+        # print(json_dict_page)
         recruit_msg_page = json_dict_page["content"]["positionResult"]
         print("获取总招聘信息：{}".format(recruit_msg_page["totalCount"]))
 
@@ -166,6 +166,8 @@ class LgwSpliceUrl:
                     id_url_dict[positionId] = url2
                     rown_dicts[positionId] = [money, welfare, region, workyear, education, hiringnumber, releasetime, position, company_name]
             return id_url_dict, rown_dicts
+        else:
+            return id_url_dict, rown_dicts
 
     def Analysis_url(self, id_url_list, proxy_list):
         """进入具体url中,读取招聘信息"""
@@ -208,5 +210,4 @@ if __name__ == "__main__":
     # print("第二个url：{}".format(url))
 
     id_url_dict, rown_dicts= LgwSpliceUrl.Recruitment_url(url_start, url_second, l_keyword, proxies)
-    print(id_url_dict)
-    print(rown_dicts)
+

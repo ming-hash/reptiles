@@ -7,6 +7,7 @@ import os
 from urllib import parse  # 用来转换中文和url
 import records
 import pymysql
+import re
 
 import requests
 from bs4 import BeautifulSoup
@@ -152,7 +153,6 @@ class GatHtml:
 
 
 # 未完成部分
-
 # class Get_Cookie:
 #     """获取cookie"""
 #
@@ -178,9 +178,11 @@ class WriteDB:
 
     def __init__(self):
         self.times = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(time.time())))
-        self.DB = records.Database(
-            'mysql+pymysql://{}:{}@{}:{}/{}'.format(readConfig.DB_USER, readConfig.DB_PASSWORD, readConfig.DB_IP,
-                                                    readConfig.DB_PORT, readConfig.DB_DATABASES))
+        self.DB = records.Database('mysql+pymysql://{}:{}@{}:{}/{}'.format(readConfig.DB_USER,
+                                                                           readConfig.DB_PASSWORD,
+                                                                           readConfig.DB_IP,
+                                                                           readConfig.DB_PORT,
+                                                                           readConfig.DB_DATABASES))
         self.qcwy_table1 = readConfig.qcwy_table1
         self.qcwy_table2 = readConfig.qcwy_table2
         self.zlzp_table1 = readConfig.zlzp_table1
@@ -206,7 +208,7 @@ class WriteDB:
                         `education` VARCHAR(30),
                         `hiringnumber` VARCHAR(30),
                         `releasetime` VARCHAR(30),
-                        `position` VARCHAR(40),
+                        `position` VARCHAR(100),
                         `company_name` VARCHAR(40),
                         `positioninformation` VARCHAR(6000),
                         `workaddress` VARCHAR(100),
@@ -242,23 +244,21 @@ class WriteDB:
                         `times` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         `uuid` VARCHAR(40) not null,
                         `url` varchar(150) not null,
-                        `position` VARCHAR(40),
-                        `company_name` VARCHAR(40),
-                        `region` VARCHAR(30),
-                        `releasetime` VARCHAR(30),
-                        `money` VARCHAR(30),
-                        `education` VARCHAR(30),
-                        `workyear` VARCHAR(30),
                         primary key(`id`)
                         ) DEFAULT CHARSET=UTF8MB4;""".format(self.lgw_table1)
         self.lgw_create_table_sql2 = """
         create table `{}` (
                         `times` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         `uuid` VARCHAR(40) not null,
+                        `money` VARCHAR(30),
                         `welfare` VARCHAR(100),
+                        `region` VARCHAR(30),
+                        `workyear` VARCHAR(30),
+                        `education` VARCHAR(30),
                         `hiringnumber` VARCHAR(30),
-                        `positioninformation` VARCHAR(6000),
-                        `workaddress` VARCHAR(100)
+                        `releasetime` VARCHAR(30),
+                        `position` VARCHAR(100),
+                        `company_name` VARCHAR(40)
                         ) DEFAULT CHARSET=UTF8MB4;""".format(self.lgw_table2)
 
     def check_tables(self):
@@ -285,46 +285,60 @@ class WriteDB:
         return True
 
     def delete_tables(self):
-        """删除所有表"""
-        for table in [self.qcwy_table1, self.qcwy_table2, self.zlzp_table1, self.zlzp_table2, self.lgw_table1,
-                      self.lgw_table2]:
-            self.DB.query("""drop table {};""".format(table))
+        """删除所有相应表"""
+        tables_list = self.DB.query("show tables;").all(as_dict=True)
+        table_list = [table_dict["Tables_in_testdb"] for table_dict in tables_list]
+        for table in table_list:
+            if table in [self.qcwy_table1, self.qcwy_table2, self.zlzp_table1, self.zlzp_table2, self.lgw_table1,
+                         self.lgw_table2]:
+                self.DB.query("""drop table {};""".format(table))
 
     def qcwy_insert_html_url_table(self, id_url_dict):
-        """写入前程无忧爬取的数据到数据库,将每条招聘的id、url存入htmlurl表中"""
+        """
+        写入前程无忧爬取的数据到数据库,将每条招聘的id、url存入htmlurl表中
+        :param id_url_dict: 字典形式的{id:url}
+        :return:
+        """
         # 插入time,id,url数据，数据库中有则更新
-        select_html_url_sql = """select uuid from {};""".format(self.qcwy_table1)
-        uuid_list = [i["uuid"] for i in self.DB.query(select_html_url_sql).all(as_dict=True)]
-        for key, value in id_url_dict.items():
-            if int(key) in uuid_list:
-                update_html_url_sql = """update {} set times = "{}",url = "{}" where uuid = "{}";""".format(
-                    self.qcwy_table1, self.times, value, key)
-                self.DB.query(update_html_url_sql)
-            else:
-                insert_html_url_sql = """insert into {}(times,uuid,url) values("{}","{}","{}");""".format(
-                    self.qcwy_table1, self.times, key, value)
-                self.DB.query(insert_html_url_sql)
+        if id_url_dict:
+            select_html_url_sql = """select uuid from {};""".format(self.qcwy_table1)
+            uuid_list = [i["uuid"] for i in self.DB.query(select_html_url_sql).all(as_dict=True)]
+            for key, value in id_url_dict.items():
+                if int(key) in uuid_list:
+                    update_html_url_sql = """update {} set times = "{}",url = "{}" where uuid = "{}";""".format(
+                        self.qcwy_table1, self.times, value, key)
+                    self.DB.query(update_html_url_sql)
+                else:
+                    insert_html_url_sql = """insert into {}(times,uuid,url) values("{}","{}","{}");""".format(
+                        self.qcwy_table1, self.times, key, value)
+                    self.DB.query(insert_html_url_sql)
 
     def qcwy_insert_html_content_table(self, rown_dicts):
-        """将每条招聘的具体解析内容存入表中"""
+        """
+        将前程无忧每条招聘的具体解析内容存入表中
+        :param rown_dicts: 字典的形式{id:[value1,value2]}
+        :return:
+        """
         # 插入time,id等数据，数据库中有则更新
-        select_html_content_sql = """select uuid from {};""".format(self.qcwy_table2)
-        uuid_list = [i["uuid"] for i in self.DB.query(select_html_content_sql).all(as_dict=True)]
-        for key, value in rown_dicts.items():
-            if int(key) in uuid_list:
-                print("正在更新代号为 {} 的数据".format(key))
-                update_html_content_sql = """
-                            update {} set times = "{}",money = "{}",welfare = "{}",region = "{}",workyear = "{}",education = "{}",hiringnumber = "{}",releasetime = "{}",position = "{}",company_name = "{}",positioninformation = "{}",workaddress = "{}",companyinformation = "{}" where uuid = "{}";""".format(
-                    self.qcwy_table2, self.times, value[0], value[1], value[2], value[3], value[4], value[5], value[6],
-                    value[7], value[8], value[9], value[10], pymysql.escape_string(value[11]), key)
-                self.DB.query(update_html_content_sql)
-            else:
-                print("正在写入代号为 {} 的数据".format(key))
-                insert_html_content_sql = """
-                            insert into {}(times,uuid,money,welfare,region,workyear,education,hiringnumber,releasetime,position,company_name,positioninformation,workaddress,companyinformation) values("{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}");""".format(
-                    self.qcwy_table2, self.times, key, value[0], value[1], value[2], value[3], value[4], value[5],
-                    value[6], value[7], value[8], value[9], value[10], pymysql.escape_string(value[11]))
-                self.DB.query(insert_html_content_sql)
+        if rown_dicts:
+            select_html_content_sql = """select uuid from {};""".format(self.qcwy_table2)
+            uuid_list = [i["uuid"] for i in self.DB.query(select_html_content_sql).all(as_dict=True)]
+            for key, value in rown_dicts.items():
+                if int(key) in uuid_list:
+                    print("正在更新代号为 {} 的数据".format(key))
+                    update_html_content_sql = """
+                                update {} set times = "{}",money = "{}",welfare = "{}",region = "{}",workyear = "{}",education = "{}",hiringnumber = "{}",releasetime = "{}",position = "{}",company_name = "{}",positioninformation = "{}",workaddress = "{}",companyinformation = "{}" where uuid = "{}";""".format(
+                        self.qcwy_table2, self.times, value[0], value[1], value[2], value[3], value[4], value[5], value[6],
+                        value[7], value[8], self.write_formats(value[9]), value[10], pymysql.escape_string(value[11]), key)
+                    self.DB.query(update_html_content_sql)
+                else:
+                    print("正在写入代号为 {} 的数据".format(key))
+                    insert_html_content_sql = """
+                                insert into {}(times,uuid,money,welfare,region,workyear,education,hiringnumber,releasetime,position,company_name,positioninformation,workaddress,companyinformation) values("{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}");""".format(
+                        self.qcwy_table2, self.times, key, value[0], value[1], value[2], value[3], value[4], value[5],
+                        value[6], value[7], value[8], value[9], self.write_formats(value[10]),
+                        pymysql.escape_string(value[11]))
+                    self.DB.query(insert_html_content_sql)
 
     def zlzp_insert_html_url_table(self, id_url_dict):
         """将每条招聘的id、url存入htmlurl表中"""
@@ -350,9 +364,11 @@ class WriteDB:
                                                                                  id_url["workyear"]))
 
     def zlzp_insert_html_content_table(self, rown_dicts):
-        """将每条招聘的具体解析内容存入表中"""
-        """写入智联招聘爬取的数据到数据库"""
-
+        """
+        将智联招聘每条招聘的具体解析内容存入表中
+        :param rown_dicts:
+        :return:
+        """
         # 插入time,id等数据，数据库中有则更新
         for key, value in rown_dicts.items():
             if key in db.Select_db("""select numbering from zlzp_html_content;"""):
@@ -367,51 +383,65 @@ class WriteDB:
                     times, key, value[0], value[1], value[2], value[3]))
 
     def lgw_insert_html_url_table(self, id_url_dict):
-        """将每条招聘的id、url存入htmlurl表中"""
-        """写入拉勾网爬取的数据到数据库"""
+        """
+        写入拉勾网爬取的数据到数据库,将每条招聘的id、url存入htmlurl表中
+        :param id_url_dict:字典形式的{id:url}
+        :return:
+        """
         # 插入time,id,url数据，数据库中有则更新
-        for id_url in id_url_list:
-            if id_url["id"] in db.Select_db("""select numbering from zlzp_html_url;"""):
-                db.Insert_table(
-                    """update zlzp_html_url set times = "%s",url = "%s",position = "%s",company_name = "%s",region = "%s",releasetime = "%s",money = "%s",education = "%s",workyear = "%s" where numbering = "%s";""" % (
-                        times, id_url["id_url"], id_url["position"], id_url["company_name"], id_url["region"],
-                        id_url["releasetime"], id_url["money"], id_url["education"], id_url["workyear"], id_url["id"]))
-            else:
-                db.Insert_table("""insert into zlzp_html_url(times,numbering,url,position,company_name,region,releasetime,money,education,workyear)
-                values("%s","%s","%s","%s","%s","%s","%s","%s","%s","%s");""" % (times,
-                                                                                 id_url["id"],
-                                                                                 id_url["id_url"],
-                                                                                 id_url["position"],
-                                                                                 id_url["company_name"],
-                                                                                 id_url["region"],
-                                                                                 id_url["releasetime"],
-                                                                                 id_url["money"],
-                                                                                 id_url["education"],
-                                                                                 id_url["workyear"]))
+        if id_url_dict:
+            select_html_url_sql = """select uuid from {};""".format(self.lgw_table1)
+            uuid_list = [i["uuid"] for i in self.DB.query(select_html_url_sql).all(as_dict=True)]
+            for key, value in id_url_dict.items():
+                if int(key) in uuid_list:
+                    update_html_url_sql = """update {} set times = "{}",url = "{}" where uuid = "{}";""".format(
+                        self.lgw_table1, self.times, value, key)
+                    self.DB.query(update_html_url_sql)
+                else:
+                    insert_html_url_sql = """insert into {}(times,uuid,url) values("{}","{}","{}");""".format(
+                        self.lgw_table1, self.times, key, value)
+                    self.DB.query(insert_html_url_sql)
 
     def lgw_insert_html_content_table(self, rown_dicts):
-        """将每条招聘的具体解析内容存入表中"""
-        """写入拉勾网爬取的数据到数据库"""
+        """
+        将拉勾网每条招聘的具体解析内容存入表中
+        :param rown_dicts: 字典的形式{id:[value1,value2]}
+        :return:
+        """
         # 插入time,id等数据，数据库中有则更新
-        for key, value in rown_dicts.items():
-            if key in db.Select_db("""select numbering from zlzp_html_content;"""):
-                print("正在更新代号为 {} 的数据".format(key))
-                db.Insert_table(
-                    """update zlzp_html_content set times = "%s",welfare = "%s",hiringnumber = "%s",positioninformation = "%s",workaddress = "%s" where numbering = "%s";""" % (
-                        times, value[0], value[1], value[2], value[3], key))
-            else:
-                print("正在写入代号为 {} 的数据".format(key))
-                db.Insert_table("""insert into zlzp_html_content(times,numbering,welfare,hiringnumber,positioninformation,workaddress)
-                      values("{0}","{1}","{2}","{3}","{4}","{5}");""".format(
-                    times, key, value[0], value[1], value[2], value[3]))
+        if rown_dicts:
+            select_html_content_sql = """select uuid from {};""".format(self.lgw_table2)
+            uuid_list = [i["uuid"] for i in self.DB.query(select_html_content_sql).all(as_dict=True)]
+            for key, value in rown_dicts.items():
+                if int(key) in uuid_list:
+                    print("正在更新代号为 {} 的数据".format(key))
+                    update_html_content_sql = """
+                                        update {} set times = "{}",money = "{}",welfare = "{}",region = "{}",workyear = "{}",education = "{}",hiringnumber = "{}",releasetime = "{}",position = "{}",company_name = "{}" where uuid = "{}";""".format(self.lgw_table2, self.times, value[0], value[1], value[2], value[3], value[4], value[5], value[6],value[7], value[8], key)
+                    self.DB.query(update_html_content_sql)
+                else:
+                    print("正在写入代号为 {} 的数据".format(key))
+                    insert_html_content_sql = """
+                                        insert into {}(times,uuid,money,welfare,region,workyear,education,hiringnumber,releasetime,position,company_name) values("{}","{}","{}","{}","{}","{}","{}","{}","{}","{}","{}");""".format(self.lgw_table2, self.times, key, value[0], value[1], value[2], value[3], value[4], value[5],value[6], value[7], value[8])
+                    self.DB.query(insert_html_content_sql)
 
     def Close_db(self):
         self.DB.close()
 
+    def write_formats(self, strs):
+        """
+        将字符串中的特殊字符串替换掉，避免写入数据库异常报错
+        :param strs: 传入字符串
+        :return: 输出替换后的字符串
+        """
+        strs = strs.replace(":", "：")
+        return strs
+
 
 if __name__ == "__main__":
     db = WriteDB()
+    # db.delete_tables()
     db.check_tables()
+    # 在写入数据库时，需要将其中的内容进行数据清洗，即将不能写入数据库，或者写入数据库的时候导致报错的字符，替换/去除为其他字符（比如：英文:;）
     qcwy_id_url_dict = {
         '100911781': 'https://jobs.51job.com/wuhan-jxq/100911781.html?s=01&t=0',
         '116935497': 'https://jobs.51job.com/wuhan/116935497.html?s=01&t=0',
@@ -780,7 +810,7 @@ if __name__ == "__main__":
         '118904543': ['', '', '武汉-东湖新技术产业开发区', '无工作经验', '本科', '招3人', '12-09发布', 'BIOS/EC测试工程师',
                       '诚迈科技（武汉分公司）—武汉诚迈科技有限公司',
                       '负责PC项目BIOS/EC测试\n\n职位要求：\n1、本科学历，3年以上BIOS/EC测试/开发经验\n2、能够看懂英文版本的BIOS/ECSPEC,器件datasheet,测试方案\n3、熟练使用Intel/AMD和第三方常见测试工具\n4、熟练使用RW工具查看，修改各种寄存器\n5、熟练使用80portdebugcard,串口线采集日志\n6、故障现场日志采集能力（BSODfulldump设置，BIOSROMdump，各种寄存器dump）\n7、基本的自动化脚本开发能力\n职能类别：软件测试测试工程师\n关键字：PCWindowsbios测试EC测试笔记本电脑\n',
-                      '上班地址：:武汉东湖高新区高新大道武汉未来科技城C2-11楼',
+                      '上班地址：武汉东湖高新区高新大道武汉未来科技城C2-11楼',
                       '诚迈科技（南京）有限公司成立于2006年9月，2017年1月20日公司成功上市，是一家专业从事软件产品设计、代码开发、质量保证及技术支持等全流程服务的软件服务提供商，致力于提供全球化的专业软件研发服务，专注于移动设备及无线互联网行业软件研发及咨询等服务。诚迈科技总部位于中国南京。经过多年的发展，规模已超过2000人，在加拿大、芬兰及日本设立销售体系，在北京、上海、深圳、武汉、广州和西安设有分支机构，业务覆盖全球，在中国（内地及台湾）、北美、欧洲、日本、韩国等地广泛开展业务。Archermind Technology (Nanjing) Co. Ltd., established in September, 2006, was listed on the stock market on 20 January,2017,is a professional software service provider specializing in software product design, code development, quality assurance, technology support, etc.. The company is devoting to providing specialized world-wide software R&D service and focusing on R&D and consult service in the field of mobile facilities and wireless internet software. The headquarters of Archermind is in Nanjing. After four years’ development, the company has more than 2,000 employees, sales systems in Canada, Finland, and Japan and branch offices in Beijing, Shanghai, Shenzhen and Wuhan. Now, the company extends its service to lots of places in the world, such as China including mainland and Taiwan, North America, Europe, Japan and Korea.诚迈科技作为行业的领军者，在全球范围内为国内外客提供一流的软件研发和测试服务。专业的研发团队凭借多年的项目经验掌握了行业核心技术，可提供Android行业软件解决方案（车载系统、TV、eBook等）；移动互联网软件解决方案（浏览器、APP Store、运营商定制等）；云终端解决方案及企业应用和云计算解决方案。在嵌入式测试方面，诚迈科技专业的软件测试团队在测试方法、测试策略、测试标准方面有着丰富的经验，精通手机终端设备中的手机操作系统、手机应用软件等测试。目前，诚迈科技已经与世界级的客户建立了长期友好的合作关系，主要客户广泛分布于终端设备制造商、世界级芯片制造商、运营商及软件公司。As a leader in the field, Archermind is dedicating to provide top software R&D and test service to domestic and oversea customers. The professional R&D group who have years’ project experience, have professional core technology and can provide total solution for Android software (Car System, TV, eBook, etc.); for mobile internet software(Browser, APP Store, Custom Operators, etc.); and provide solution for cloud terminal, enterprise application and cloud computing. On the aspect of embedded test, the software test groups are experienced in test method, test strategy and test standard. They are proficient in test of mobile operating system and mobile application software in mobile terminal equipment. Now, Archermind has established long-term cooperative relationship with world-class customers, who are from the top terminal equipment manufacturers, chip manufacturers, operators and software companies.如果您崇尚奋斗，渴望创新，并希望同公司一起成长，请加入我们的团队，您可以应对不同的挑战，以激发个人潜能。我们将长期提供多方面的发展机会，并对成绩突出的员工给予职位晋升和物质奖励。If you like striving, innovation and growing up with the company, please join us! Here you have the opportunity to meet different challenges to motivate your potential. We will provide kinds of development opportunities. If you work hard and outstandingly, we will give you promotion and rewards.您还将享受完善的员工福利制度，包括：弹性工作时间，各项激励奖金，养老保险，医疗保险，失业保险，工伤、生育保险，住房公积金，员工俱乐部，各种员工活动，员工心灵关怀和健康关怀计划，特别节日假期，带薪年假，集体户口（如需要）等。You can also benefit from the employee welfare system, which includes flexible working time, pension insurance, medical insurance, unemployment insurance, industrial injury assurance and maternity insurance, housing fund, employee club, a variety of employee activities, employee spiritual care and health care programs, particularly holidays, paid annual leave, collective household  account(if need), etc..处于高速发展和扩张期的诚迈科技诚邀有志之士与公司同仁一起共创一个伟大的软件企业！Archermind, who is in the period of rapid development and expansion, sincerely invites the ones who are looking forward to create a great software industry with the us.公司网址：www.archermind.com若您希望在以下城市工作，可按以下邮件地址投递：南 京：hr@archermind.com武 汉：hr_wh@archermind.com上 海：hr_sh@archermind.com深 圳：hr_sz@archermind.com北 京：hr_bj@archermind.com广 州：hr_gz@archermind.com'],
         '103118891': ['1-2万/月', '五险一金|员工旅游|餐饮补贴|绩效奖金|定期体检|专业培训|年终奖金|', '武汉-东湖新技术产业开发区', '1年经验', '本科', '招3人', '12-09发布',
                       'Software engineer', '苏州联讯仪器有限公司',
@@ -1184,6 +1214,15 @@ if __name__ == "__main__":
                       '工作职责\n1.有效执行集成测试及系统测试，提交测试报告；\n2.负责底层或上层软件测试；\n3.分析并理解软件需求，编写、执行和维护测试用例；\n4.开发测试工具，执行自动化测试，提高测试效率；\n5.跟踪定位产品软件中的缺陷或问题，并提出改进意见。\n任职要求\n1.生物医学工程、计算机科学、自动化及其他相关工科专业，本科及以上学历，硕士优先；\n2.有优秀的学习能力和自我驱动力；\n3.具有良好的团队合作精神和协作能力；\n4.具有编程能力和兴趣，至少熟练掌握一种编程语言，如C/C++/C#/python；\n5.熟悉一种或多种测试工具，有软件开发/测试经验者优先。\n\n职能类别：大学/大专应届毕业生\n',
                       '职能类别：大学/大专应届毕业生',
                       '联影医疗技术集团有限公司是一家全球领先的医疗科技企业，致力于为全球客户提供高性能医学影像、放疗产品及医疗信息化、智能化解决方案。公司于2011年成立，总部位于上海，同时在美国休斯敦、克利夫兰、康科德、波士顿和国内武汉、深圳、常州、贵州等地设立子公司及研发中心。联影拥有一支世界级人才团队，包括140余位海归科学家，500余位深具行业研发及管理经验的专业人士。目前，联影人才梯队总数达3600多人，其中40%以上为研发人员。截至目前，联影已向市场推出掌握完全自主知识产权的63款产品，包括全景动态扫描PET-CT（2米PET-CT）、“时空一体”超清TOF PET/MR、光梭3.0T MR、160层北斗CT、一体化CT-linac等一批世界首创和中国首创产品，整体性能指标达到国际一流水平，部分产品和技术实现世界范围内的引领。\xa0\xa0\xa0\xa0目前，联影产品已进驻美国、日本等全球18个国家和地区的3300多家医疗及科研机构，包括350多家***医院。2016-2018年，联影PET-CT及中高端DR在国内新增市场的产品份额持续3年位列***。基于uCloud联影智慧医疗云，联影结合移动互联网、云计算、人工智能、大数据分析等前沿技术，为政府、医院、科研机构和个人量身定制一系列云端智能化解决方案。2014年至今，联影助力上海、安徽、福建、贵州、湖北等19个省市的地方政府搭建分级诊疗体系，覆盖医院超过1700家，覆盖人群超过1亿。基于uAI智能平台，联影致力于打造“全栈全谱”的跨模态AI解决方案，贯穿疾病成像、筛查、随访、诊断、治疗、评估各环节，为医疗设备和医生赋能，让成像更好、更快、更安全、更经济，大幅提升医生诊断效率和精准度。2017年9月，联影以333.33亿元估值完成A轮融资，融资金额33.33亿元***，成为中国医疗设备行业***单笔私募融资。以“成为世界级医疗创新引领者”为愿景，“创造不同，为健康大同”为使命，联影正在构建一个以预防、诊断、治疗、康复全线产品为基础，以uCloud联影智慧医疗云为桥梁，以第三方精准医学诊断服务为入口，以大数据为智慧，由智能芯片与联影uAI人工智能平台全面赋能的全智能化医疗健康生态。通过与全球高校、医院、研究机构及产业合作伙伴的深度协同，持续提升全球高端医疗设备及服务可及性，为客户创造更多价值。']}
+
+    lgw_id_url_dict = {6107984: 'https://www.lagou.com/jobs/6107984.html?show=91f1d0f88afb4ca8999505c42cd7bb92',
+                       5625790: 'https://www.lagou.com/jobs/5625790.html?show=91f1d0f88afb4ca8999505c42cd7bb92'}
+    lgw_rown_dicts = {
+        6107984: ['7k-12k', '领导好,带薪年假,员工体检，五险一金', '武汉', '3-5年', '本科', '', '2019-12-18 13:54:29', '软件测试工程师',
+                  '北京广通信达软件股份有限公司杭州分公司'],
+        5625790: ['8k-16k', '带薪年假,五险一金,年终奖,地铁直达', '武汉', '3-5年', '本科', '', '2019-12-17 13:08:45', '高级软件测试工程师',
+                  '智慧工匠科技有限公司']}
+
     zlzp_id_url_list = [
         {'id': 'CC144045072J00233452604', 'position': '软件测试工程师（中级）', 'company_name': '上海国响信息技术有限公司', 'region': '武汉-洪山区',
          'releasetime': '2019-12-10 16:40:58', 'money': '8K-12K', 'education': '本科', 'workyear': '3-5年',
@@ -1333,7 +1372,8 @@ if __name__ == "__main__":
 
     # db.qcwy_insert_html_url_table(qcwy_id_url_dict)
     # db.qcwy_insert_html_content_table(qcwy_rown_dicts)
-
+    # db.lgw_insert_html_url_table(lgw_id_url_dict)
+    # db.lgw_insert_html_content_table(lgw_rown_dicts)
 
 
 
